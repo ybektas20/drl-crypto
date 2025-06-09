@@ -4,7 +4,7 @@ docker build -t drl-crypto:1.0 .
 
 # to run the image:
 docker run --rm -it \
-  -v "$(pwd)/data:/home/appuser/data" \
+  -v "$(pwd)/data:/home/appuser/app/data" \
   drl-crypto:1.0 \
   bash
 

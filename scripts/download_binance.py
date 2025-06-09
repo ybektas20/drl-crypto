@@ -14,7 +14,7 @@ from itertools import product
 from pathlib import Path
 
 import aiohttp, aiofiles
-import pandas as pd                       # ← only dependency swap
+import pandas as pd                       
 from tqdm.asyncio import tqdm
 
 BASE = "https://data.binance.vision/data/spot/monthly/aggTrades"
