@@ -1,0 +1,19 @@
+{
+	
+	"name": "Deep-RL Crypto",
+	
+	"build": { 
+		"context": "..", 
+		"dockerfile": "../Dockerfile" 
+	},
+	
+	"remoteUser": "appuser",               
+	
+	"workspaceFolder": "/home/appuser/app",
+	
+	"mounts": [
+		"source=${localWorkspaceFolder}/data,target=/home/appuser/app/data,type=bind"
+	]
+	
+  }
+  

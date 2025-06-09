@@ -1,0 +1,64 @@
+deep-rl-crypto/
+│
+├── README.md                  # high-level overview & quick-start
+├── pyproject.toml / setup.py  # packaging & dependencies (torch, gym-nasium, ccxt, etc.)
+├── requirements.txt           # exact pinned versions for reproducible runs
+│
+├── data/
+│   ├── raw/                   # untouched Binance CSV / Parquet shards (aggTrades)
+│   ├── interim/               # 1-second bars after resampling
+│   └── processed/             # tensors ready for the network
+│
+├── notebooks/                 # exploratory work, sanity checks
+│   └── 00_resample_and_QA.ipynb
+│
+├── scripts/                   # one-off CLI helpers
+│   ├── download_binance.py    # incremental fetch + resume logic
+│   ├── resample.py            # raw → 1 s OHLCV parquet
+│   └── shard_to_s3.sh
+│
+├── src/
+│   ├── config/                       # hydra or yaml configs
+│   │   ├── data.yaml
+│   │   ├── env.yaml
+│   │   └── model.yaml
+│   │
+│   ├── features/
+│   │   ├── bar_features.py           # log-returns, z-score, EWMA, etc.
+│   │   └── microstructural.py        # trade imbalance, intensity, etc.
+│   │
+│   ├── datasets/
+│   │   ├── window_maker.py           # sliding window → (X, y) tensors
+│   │   └── replay_buffer.py          # n-step or PER buffer
+│   │
+│   ├── envs/
+│   │   └── binance_long_short_env.py # gym-style; exposes step/ reset
+│   │
+│   ├── models/
+│   │   ├── cnn_eiie.py               # Ensemble-of-Identical-Independent-Evaluators CNN
+│   │   └── heads.py                  # separate value / policy heads if actor-critic
+│   │
+│   ├── agents/
+│   │   ├── dqn_long_short.py         # baseline discrete long/flat/short
+│   │   └── pg_eiie.py                # policy-gradient w/ soft or tanh output
+│   │
+│   ├── training/
+│   │   ├── trainer.py                # batches envs, handles rollouts & updates
+│   │   └── callbacks.py              # logging, checkpointing, early-stop
+│   │
+│   ├── evaluation/
+│   │   └── backtester.py             # vectorised portfolio simulator incl. fees & slippage
+│   │
+│   ├── utils/
+│   │   ├── logger.py                 # wandb / tensorboard wrappers
+│   │   └── math.py                   # transaction-cost factor μ_t, etc. :contentReference[oaicite:0]{index=0}
+│   │
+│   └── entrypoints/
+│       ├── train.py                  # `python -m entrypoints.train +config=model=cnn_eiie`
+│       └── trade_live.py             # connects to WebSocket & streams actions
+│
+├── tests/                     # pytest unit & smoke tests
+│
+└── docker/
+    ├── Dockerfile             # CUDA-enabled image
+    └── compose.yml
