@@ -55,17 +55,9 @@ def get_log_volume(df, buy_col="buy_qty", sell_col="sell_qty", last_price_col="p
     else:
         return result.collect().to_series()
 
-def normalize_zscore(df, series_col, window=60):
-    """Normalize a series using z-score normalization with Polars."""
-    return df.with_columns([
-        pl.col(series_col).rolling_mean(window_size=window, min_samples=1).alias("mean"),
-        pl.col(series_col).rolling_std(window_size=window, min_samples=1).alias("std")
-    ]).with_columns([
-        ((pl.col(series_col) - pl.col("mean")) / pl.col("std")).alias("zscore")
-    ]).select("zscore").to_series()
 
 # Alternative version that works with a Polars Series directly
-def normalize_zscore_series(series, window=60):
+def normalize_zscore(series, window=60):
     """Normalize a Polars Series using z-score normalization."""
     mean = series.rolling_mean(window_size=window, min_samples=1)
     std = series.rolling_std(window_size=window, min_samples=1)
@@ -82,7 +74,7 @@ def create_features(df, cfg):
             name = f"log_ret_{window}"
             if cfg["return"].get("norm", {}).get("type") == "rolling_zscore":
                 norm_window = int(cfg["return"]["norm"]["window"]) * window
-                log_ret = normalize_zscore_series(log_ret, window=norm_window)
+                log_ret = normalize_zscore(log_ret, window=norm_window)
                 name += f"_zscore_{norm_window}"
             features.append((name, log_ret))
 
@@ -96,7 +88,7 @@ def create_features(df, cfg):
             name = f"log_volume_{agg_window}"
             if cfg["volume"].get("norm", {}).get("type") == "zscore":
                 norm_window = int(cfg["volume"]["norm"]["window"]) * agg_window
-                log_volume = normalize_zscore_series(log_volume, window=norm_window)
+                log_volume = normalize_zscore(log_volume, window=norm_window)
                 name += f"_zscore_{norm_window}"
             features.append((name, log_volume))
 
@@ -110,7 +102,7 @@ def create_features(df, cfg):
             name = f"ofi_{agg_window}"
             if cfg["ofi"].get("norm", {}).get("type") == "zscore":
                 norm_window = int(cfg["ofi"]["norm"]["window"]) * agg_window
-                ofi = normalize_zscore_series(ofi, window=norm_window)
+                ofi = normalize_zscore(ofi, window=norm_window)
                 name += f"_zscore_{norm_window}"
             features.append((name, ofi))
 
