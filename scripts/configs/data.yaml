@@ -1,8 +1,0 @@
-# configs/data.yaml
-resample:
-  freq: "1s"            
-  drop_empty: true      
-paths:
-  raw_root: "data/raw/aggTrades"
-  out_root: "data/interim/{freq}"
-

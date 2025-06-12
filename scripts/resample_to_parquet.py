@@ -78,15 +78,15 @@ def resample(lf: pl.LazyFrame, freq: str, drop_empty: bool) -> pl.DataFrame:
         bars = bars.drop_nulls("price_last")
 
     return (
-        bars.collect(streaming=True)
+        bars.collect(engine="streaming")
             .with_columns(pl.col("ts").cast(pl.Datetime("ms")))
     )
 
 
-def process_one(zip_path: Path, out_root: Path, cfg):
+def process_one(zip_path: Path, processed_root: Path, cfg):
     sym   = zip_path.parent.name
     month = "-".join(zip_path.stem.split("-")[-2:])          # e.g. 2025-05
-    out_dir = out_root / sym
+    out_dir = processed_root / sym
     out_dir.mkdir(parents=True, exist_ok=True)
 
     bars = resample(read_zip(zip_path), cfg.resample.freq, cfg.resample.drop_empty)
@@ -95,15 +95,16 @@ def process_one(zip_path: Path, out_root: Path, cfg):
 
 
 # --------------------------------------------------------------------------- #
-@hydra.main(config_path="configs", config_name="data", version_base=None)
+@hydra.main(config_path="../configs", config_name="data", version_base=None)
 def main(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg, resolve=True))
-    raw_root = Path(cfg.paths.raw_root)
-    out_root = Path(cfg.paths.out_root.format(freq=cfg.resample.freq))
+    #print(OmegaConf.to_yaml(cfg, resolve=True))
+    print("Resampling Binance aggTrades ZIPs to Parquet bars...")
+    raw_processed_root = Path(cfg.download.dest)
+    processed_root = Path(cfg.resample.dest.format(freq=cfg.resample.freq))
 
-    files = glob.glob(os.path.join(raw_root, "**/*.zip"), recursive=True)
+    files = glob.glob(os.path.join(raw_processed_root, "**/*.zip"), recursive=True)
     for fp in tqdm(files, desc=f"Resampling → {cfg.resample.freq}", unit="file"):
-        process_one(Path(fp), out_root, cfg)
+        process_one(Path(fp), processed_root, cfg)
 
 
 if __name__ == "__main__":

@@ -1,146 +1,156 @@
-#!/usr/bin/env python
-"""
-Feature builder
-===============
-
-Reads resampled bars in  data/interim/{freq}/{sym}/{sym}-{freq}-{YYYY-MM}.parquet
-and writes engineered features to
-    data/processed/{freq}/{sym}/{sym}-feat-{freq}-{YYYY-MM}.parquet
-
-Everything – lags, rolling windows, norms – comes from configs/features.yaml.
-"""
-
-from __future__ import annotations
-from pathlib import Path
-import glob
-
 import polars as pl
+import numpy as np
+from omegaconf import OmegaConf
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from pathlib import Path
+from polars import col
 from tqdm import tqdm
 
+# ───────────────────────────────────────────────────────────────────────────────
+# Feature Calculation Functions
 
-# ───────────────────────────── helper exprs ──────────────────────────────
-def rolling_norm(expr: pl.Expr, ntype: str, win: int) -> pl.Expr:
-    if ntype == "zscore":
-        expr = (expr - expr.rolling_mean(win)) / (expr.rolling_std(win) + 1e-9)
-    elif ntype == "minmax":
-        expr = (expr - expr.rolling_min(win)) / (
-            expr.rolling_max(win) - expr.rolling_min(win) + 1e-9
-        )
-    return expr
-
-
-def make_lagged(col: str, lag: int, transform: str | None) -> pl.Expr:
-    if transform == "log":
-        expr = (pl.col(col) / pl.col(col).shift(lag)).log()
-        return expr.alias(f"{col}_logret_l{lag}")
-    if transform == "pct":
-        expr = (pl.col(col) / pl.col(col).shift(lag) - 1.0)
-        return expr.alias(f"{col}_pct_l{lag}")
-    return pl.col(col).shift(lag).alias(f"{col}_l{lag}")
-
-
-# ────────────────────────── feature family handlers ──────────────────────
-def single_series_family(lf: pl.LazyFrame, spec: DictConfig) -> pl.LazyFrame:
-    col = spec.input_col
-    for win in spec.agg_windows:
-        base_alias = f"{col}_agg{win}"
-        lf = lf.with_columns(
-            pl.col(col).rolling_sum(win, center=False).alias(base_alias)
-        )
-        # normalise
-        normed = rolling_norm(
-            pl.col(base_alias), spec.norm.type, spec.norm.get("window", 1)
-        ).alias(base_alias)  # keeps same name
-        lf = lf.with_columns(normed)
-        # lags
-        for lag in spec.lags:
-            lf = lf.with_columns(make_lagged(base_alias, lag, spec.get("transform")))
-    return lf
-
-
-def ofi_family(lf: pl.LazyFrame, spec: DictConfig) -> pl.LazyFrame:
-    for win in spec.agg_windows:
-        bf = f"buy_flow_{win}"
-        sf = f"sell_flow_{win}"
-        ofi = f"ofi_{win}"
-
-        lf = lf.with_columns(
-            [
-                pl.col(spec.buy_col).rolling_sum(win, center=False).alias(bf),
-                pl.col(spec.sell_col).rolling_sum(win, center=False).alias(sf),
-            ]
-        )
-        ofi_expr = (
-            (pl.col(bf) - pl.col(sf)) / (pl.col(bf) + pl.col(sf) + 1e-9)
-        ).alias(ofi)
-        lf = lf.with_columns(ofi_expr)
-
-        # normalise and (only) lag-0
-        normed = rolling_norm(
-            pl.col(ofi), spec.norm.type, spec.norm.get("window", 1)
-        ).alias(f"{ofi}_l0")
-        lf = lf.with_columns(normed)
-    return lf
-
-# ───────────────────────── exposed helper for unit-tests ───────────────────
-def inject_family(lf: pl.LazyFrame, spec: DictConfig) -> pl.LazyFrame:
-    """Public wrapper so tests can add one feature family to a LazyFrame."""
-    if "input_col" in spec:
-        return single_series_family(lf, spec)
-    if "buy_col" in spec:          # OFI
-        return ofi_family(lf, spec)
-    raise ValueError("Unknown feature spec")
-
-
-# ───────────────────────────── Hydra entrypoint ───────────────────────────
-@hydra.main(config_path="configs", config_name="features", version_base=None)
-def main(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg, resolve=True))
-
-    freq = cfg.get("resample", {}).get("freq", "1s")
-    interim_root = Path(f"data/interim/{freq}")
-    out_root = Path(f"data/processed/{freq}")
-    out_root.mkdir(parents=True, exist_ok=True)
-
-    dtype = getattr(pl, cfg.dtype.capitalize())  # "float32" → pl.Float32
-
-    shards = sorted(glob.glob(str(interim_root / "*" / f"*{freq}-*.parquet")))
-    if not shards:
-        raise SystemExit(f"No input shards under {interim_root}")
-
-    for fp in tqdm(shards, desc=f"Features {freq}", unit="file"):
-        sym = Path(fp).parent.name
-        month = "-".join(Path(fp).stem.split("-")[-2:])
-        out_file = out_root / sym / f"{sym}-feat-{freq}-{month}.parquet"
-        if out_file.exists():
-            continue
-
-        lf = pl.scan_parquet(fp)
-
-        # apply every feature family
-        for fam_name, spec in cfg.features.items():
-            if "input_col" in spec:      # returns / volumes
-                lf = single_series_family(lf, spec)
-            elif "buy_col" in spec:      # OFI
-                lf = ofi_family(lf, spec)
-            else:
-                raise ValueError(f"Unknown feature block {fam_name}")
-
-        # collect → cast dtype → drop raw cols → write
-        df = lf.collect(engine="streaming")
-
-         # 1) cast *feature* columns to float32 but leave ts untouched
-        feat_cols = [c for c in df.columns if c != "ts"]
-        df = df.with_columns([pl.col(feat_cols).cast(dtype)])
+def get_ofi(df, buy_col="buy_qty", sell_col="sell_qty", last_price_col="price_last", n=60):
+    """Calculate the Order Flow Imbalance (OFI) using Polars."""
+    result = df.with_columns([
+        # Calculate buy and sell flows
+        (pl.col(buy_col) * pl.col(last_price_col)).rolling_sum(window_size=n, min_samples=1).alias("buy_flow"),
+        (pl.col(sell_col) * pl.col(last_price_col)).rolling_sum(window_size=n, min_samples=1).alias("sell_flow")
+    ]).with_columns([
+        # Calculate OFI
+        ((pl.col("buy_flow") - pl.col("sell_flow")) / (pl.col("buy_flow") + pl.col("sell_flow"))).alias("ofi")
+    ]).select("ofi")
     
-         # 2) drop raw bar columns so only engineered features remain
-        drop = {"price_last", "buy_qty", "sell_qty", "price_last_agg1"}
-        df = df.select([c for c in df.columns if c not in drop])
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        df.write_parquet(out_file, compression="zstd")
-        tqdm.write(f"✔ {out_file}")
+    # Handle both DataFrame and LazyFrame
+    if hasattr(result, 'to_series'):
+        return result.to_series()
+    else:
+        return result.collect().to_series()
+
+def get_log_ret(df, price_col="price_last", n=60):
+    """Calculate log returns using Polars."""
+    result = df.with_columns([
+        (pl.col(price_col) / pl.col(price_col).shift(n)).log().alias("log_ret")
+    ]).select("log_ret")
+    
+    # Handle both DataFrame and LazyFrame
+    if hasattr(result, 'to_series'):
+        return result.to_series()
+    else:
+        return result.collect().to_series()
+
+def get_log_volume(df, buy_col="buy_qty", sell_col="sell_qty", last_price_col="price_last", n=60):
+    """Calculate log-transformed volume using Polars."""
+    result = df.with_columns([
+        # Calculate total volume
+        (pl.col(buy_col) * pl.col(last_price_col) + pl.col(sell_col) * pl.col(last_price_col)).alias("volume")
+    ]).with_columns([
+        # Replace zeros with 1, take log, then rolling sum
+        pl.col("volume").map_elements(lambda x: max(x, 1), return_dtype=pl.Float64).log()
+        .rolling_sum(window_size=n, min_samples=1).alias("log_volume")
+    ]).select("log_volume")
+    
+    # Handle both DataFrame and LazyFrame
+    if hasattr(result, 'to_series'):
+        return result.to_series()
+    else:
+        return result.collect().to_series()
+
+def normalize_zscore(df, series_col, window=60):
+    """Normalize a series using z-score normalization with Polars."""
+    return df.with_columns([
+        pl.col(series_col).rolling_mean(window_size=window, min_samples=1).alias("mean"),
+        pl.col(series_col).rolling_std(window_size=window, min_samples=1).alias("std")
+    ]).with_columns([
+        ((pl.col(series_col) - pl.col("mean")) / pl.col("std")).alias("zscore")
+    ]).select("zscore").to_series()
+
+# Alternative version that works with a Polars Series directly
+def normalize_zscore_series(series, window=60):
+    """Normalize a Polars Series using z-score normalization."""
+    mean = series.rolling_mean(window_size=window, min_samples=1)
+    std = series.rolling_std(window_size=window, min_samples=1)
+    return (series - mean) / std
+
+def create_features(df, cfg):
+    """Create features from a Polars DataFrame based on configuration."""
+    features = []
+
+    # Handle log returns
+    if "return" in cfg:
+        for window in cfg["return"]["windows"]:
+            log_ret = get_log_ret(df, price_col=cfg["return"]["input_col"], n=window)
+            name = f"log_ret_{window}"
+            if cfg["return"].get("norm", {}).get("type") == "rolling_zscore":
+                norm_window = int(cfg["return"]["norm"]["window"]) * window
+                log_ret = normalize_zscore_series(log_ret, window=norm_window)
+                name += f"_zscore_{norm_window}"
+            features.append((name, log_ret))
+
+    # Handle volume features
+    if "volume" in cfg:
+        for agg_window in cfg["volume"]["windows"]:
+            log_volume = get_log_volume(df, buy_col=cfg["volume"]["input_cols"][0], 
+                                        sell_col=cfg["volume"]["input_cols"][1], 
+                                        last_price_col=cfg["volume"].get("price_col", "price_last"),
+                                        n=agg_window)
+            name = f"log_volume_{agg_window}"
+            if cfg["volume"].get("norm", {}).get("type") == "zscore":
+                norm_window = int(cfg["volume"]["norm"]["window"]) * agg_window
+                log_volume = normalize_zscore_series(log_volume, window=norm_window)
+                name += f"_zscore_{norm_window}"
+            features.append((name, log_volume))
+
+    # Handle OFI features
+    if "ofi" in cfg:
+        for agg_window in cfg["ofi"]["windows"]:
+            ofi = get_ofi(df, buy_col=cfg["ofi"]["buy_col"], 
+                          sell_col=cfg["ofi"]["sell_col"],
+                          last_price_col=cfg["ofi"].get("price_col", "price_last"),
+                          n=agg_window)
+            name = f"ofi_{agg_window}"
+            if cfg["ofi"].get("norm", {}).get("type") == "zscore":
+                norm_window = int(cfg["ofi"]["norm"]["window"]) * agg_window
+                ofi = normalize_zscore_series(ofi, window=norm_window)
+                name += f"_zscore_{norm_window}"
+            features.append((name, ofi))
+
+    return features
+
+
+def inject_family(df, cfg):
+    """
+    This function takes a LazyFrame, applies the feature generation, 
+    and returns a transformed LazyFrame with calculated features.
+    """
+    df = df.lazy()
+
+    # Add features to the dataframe based on the configuration
+    for feature_name, feature_data in create_features(df, cfg):
+        df = df.with_columns(pl.lit(feature_data).alias(feature_name))
+    
+    return df
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Hydra config for the paths and feature settings
+@hydra.main(config_path="../configs", config_name="data", version_base=None)
+def main(cfg):
+    print("creating features...")
+    processed_root = Path(cfg.resample.dest.format(freq=cfg.resample.freq))
+    features_root = Path(cfg.features.dest) / cfg.resample.freq
+
+    files = [str(file) for file in processed_root.glob("**/*.parquet")]
+
+    for file in tqdm(files, desc="Processing files"):
+        df = pl.read_parquet(file).lazy()
+        df = df.sort("ts")
+
+        df_with_features = inject_family(df, cfg.features)
+
+        features_root.mkdir(parents=True, exist_ok=True)
+
+        output_file = features_root / Path(file).name
+        df_with_features.collect().write_parquet(output_file, compression="zstd")
 
 
 if __name__ == "__main__":

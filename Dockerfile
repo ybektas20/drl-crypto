@@ -9,7 +9,7 @@ RUN apt-get update && \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Set a non-root user (optional but good practice)
+# 3. Set a non-processed_root user (optional but good practice)
 ARG USER=appuser
 RUN useradd -m ${USER}
 USER ${USER}
