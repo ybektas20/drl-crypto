@@ -5,3 +5,4 @@ resample:
 paths:
   raw_root: "data/raw/aggTrades"
   out_root: "data/interim/{freq}"
+
