@@ -58,8 +58,13 @@ def read_zip(path: Path) -> pl.LazyFrame:
     )
 
 
+import polars as pl
+
 def resample(lf: pl.LazyFrame, freq: str, drop_empty: bool) -> pl.DataFrame:
-    bars = (
+    # ------------------------------------------------------------------ #
+    # 1) bar + synthetic BBO
+    # ------------------------------------------------------------------ #
+    bars_lz = (
         lf.group_by_dynamic("ts", every=freq, closed="left", label="left")
           .agg(
               price_last = pl.col("price").last(),
@@ -71,16 +76,55 @@ def resample(lf: pl.LazyFrame, freq: str, drop_empty: bool) -> pl.DataFrame:
                   pl.when(pl.col("is_buyer_maker"))
                     .then(pl.col("qty")).otherwise(0.0)
               ).sum(),
+              best_bid = (
+                  pl.when(pl.col("is_buyer_maker"))
+                    .then(pl.col("price")).otherwise(None)
+              ).last(),
+              best_ask = (
+                  pl.when(~pl.col("is_buyer_maker"))
+                    .then(pl.col("price")).otherwise(None)
+              ).last(),
           )
           .sort("ts")
     )
     if drop_empty:
-        bars = bars.drop_nulls("price_last")
+        bars_lz = bars_lz.drop_nulls("price_last")
 
-    return (
-        bars.collect(engine="streaming")
-            .with_columns(pl.col("ts").cast(pl.Datetime("ms")))
+    bars = (
+        bars_lz.collect(engine="streaming")
+               .with_columns(
+                   pl.col("best_bid").forward_fill(),
+                   pl.col("best_ask").forward_fill(),
+                   pl.col("ts").cast(pl.Datetime("ms")),
+               )
     )
+
+    # ------------------------------------------------------------------ #
+    # 2) empirical tick  =  most-frequent positive (ask − bid)
+    # ------------------------------------------------------------------ #
+    tick_df = (
+        bars.select(spread = pl.col("best_ask") - pl.col("best_bid"))
+            .filter(pl.col("spread") > 0)
+            .group_by("spread")
+            .len()
+            .sort("len", descending=True)
+    )
+    tick = tick_df["spread"][0] if len(tick_df) else 0.0
+    if tick == 0.0:                       # ultra-quiet session fallback
+        tick = bars["price_last"].mean() * 1e-8
+
+    # ------------------------------------------------------------------ #
+    # 3) enforce strictly-positive spread = one tick
+    # ------------------------------------------------------------------ #
+    bars = bars.with_columns(
+        pl.when(pl.col("best_ask") <= pl.col("best_bid"))
+          .then(pl.col("best_bid") + tick)
+          .otherwise(pl.col("best_ask"))
+          .alias("best_ask")
+    )
+
+    return bars
+
 
 
 def process_one(zip_path: Path, processed_root: Path, cfg):

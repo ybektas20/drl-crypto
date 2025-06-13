@@ -1,0 +1,45 @@
+Metadata-Version: 2.4
+Name: drl-crypto
+Version: 1.0.0
+Summary: deep rl for portfolio optimization in crypto markets
+Author: Yusuf Emir Bektaş
+Author-email: ybektas20@ku.edu.tr
+Description-Content-Type: text/markdown
+Requires-Dist: polars==1.30.0
+Requires-Dist: pandas==2.3.0
+Requires-Dist: numpy==2.3.0
+Requires-Dist: matplotlib==3.10.3
+Requires-Dist: statsmodels==0.14.4
+Requires-Dist: scikit-learn==1.7.0
+Requires-Dist: pyarrow==20.0.0
+Requires-Dist: aiohttp==3.12.11
+Requires-Dist: aiofiles==24.1.0
+Requires-Dist: tqdm==4.67.1
+Requires-Dist: hydra-core==1.3.2
+Requires-Dist: ipykernel==6.29.5
+Requires-Dist: pytest==8.4.0
+Requires-Dist: gymnasium==1.1.1
+Requires-Dist: zarr==3.0.8
+Dynamic: author
+Dynamic: author-email
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: summary
+
+
+# to build the image:
+docker build -t drl-crypto:1.0 .
+
+# to run the image:
+docker run --rm -it \
+  -v "$(pwd)/data:/home/appuser/app/data" \
+  drl-crypto:1.0 \
+  bash
+
+# sample data loading command:
+python scripts/download_binance.py \
+    --symbols BTCUSDT ETHUSDT ADAUSDT BNBUSDT DOGEUSDT SOLUSDT XRPUSDT \
+    --start 2025-05-01 \
+    --end   2025-05-31 \
+    --dest  data/raw/aggTrades

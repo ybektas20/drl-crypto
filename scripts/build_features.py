@@ -59,8 +59,8 @@ def get_log_volume(df, buy_col="buy_qty", sell_col="sell_qty", last_price_col="p
 # Alternative version that works with a Polars Series directly
 def normalize_zscore(series, window=60):
     """Normalize a Polars Series using z-score normalization."""
-    mean = series.rolling_mean(window_size=window, min_samples=1)
-    std = series.rolling_std(window_size=window, min_samples=1)
+    mean = series.rolling_mean(window_size=window, min_samples=window)
+    std = series.rolling_std(window_size=window, min_samples=window)
     return (series - mean) / std
 
 def create_features(df, cfg):
