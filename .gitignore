@@ -1,0 +1,12 @@
+*.csv
+*.zip
+drl-env
+data
+outputs
+results
+*.log
+*.tmp
+drl-crypto.egg-info
+drl_crypto.egg-info
+notebooks
+*__pycache__

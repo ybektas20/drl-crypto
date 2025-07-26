@@ -1,0 +1,42 @@
+# configs/train.yaml
+seed: 42
+output_path: "results/"
+data:  
+  symbols: [ "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOGEUSDT", "SOLUSDT" ,"XRPUSDT", "BTCUSDT" ]    
+  root: "/Users/yusuf.bektas/Quant/drl-crypto/data/features/{freq}" 
+  window: 10
+
+  # calendar splits
+  start_train: "2024-06"
+  end_train:   "2025-03"
+  start_val:   "2025-04"
+  end_val:     "2025-06"
+
+model:
+  long_short: False   # true => L1 projection+cash, false => softmax+cash
+
+agent:
+  commission: 0.0
+  lr: 1.0e-5          # can be overridden by grid.lr
+  batch_size: 32
+  beta: 0.2
+  grad_clip: 5.0
+
+train:
+  log_every: 1000      # print every N steps
+  max_steps: null     # null = whole dataset
+
+eval:
+  risk_free: 0.0      # for Sharpe
+  # will be auto-computed from sampling_freq if not set:
+  annualization: null
+
+grid:                 
+  #window: [6, 36, 72]  
+  #lr: [5.0e-4, 5.0e-5, 1.0e-5]
+  #beta: [1.0e-1, 1.0e-2, 5.0e-3] 
+  #batch_size: [64, 32, 16]
+  window : [50]
+  lr: [5.0e-5]
+  beta: [0.01]
+  batch_size: [32]

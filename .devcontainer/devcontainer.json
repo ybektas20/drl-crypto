@@ -1,0 +1,16 @@
+{
+	
+	"name": "Deep-RL Crypto",
+	
+	"build": { 
+		"context": "..", 
+		"dockerfile": "../Dockerfile" 
+	},
+	
+	"workspaceFolder": "/workspaces/drl-crypto",
+	
+	"mounts": [
+		"source=${localWorkspaceFolder}/data,target=/workspaces/drl-crypto/data,type=bind"
+	]
+	
+}  

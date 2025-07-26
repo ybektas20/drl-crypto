@@ -1,0 +1,44 @@
+# configs/data.yaml
+download:
+  symbols: ["BTCUSDT", "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOGEUSDT", "SOLUSDT" ,"XRPUSDT" ]  
+  start: "2024-06-01"                         
+  end: "2025-07-01"                          
+  dest : "data/raw/aggTrades"                
+
+resample:
+  freq: "1800s"            
+  drop_empty: true
+  dest: "data/processed/{freq}"      
+
+features:
+  dest: "data/features"
+  
+  return:                         
+    input_col: price_last
+    windows: [1]
+    transform: log
+    dtype: float32
+    norm:
+      type: rolling_zscore
+      window: 60
+  
+  volume:                         
+    input_cols: [buy_qty, sell_qty]
+    windows: [1]
+    transform: log 
+    dtype: float32
+    norm:
+      type: zscore
+      window: 60                  
+
+  ofi:                            
+    buy_col: buy_qty
+    sell_col: sell_qty
+    windows: [1]
+    dtype: float32
+    norm:
+      type: zscore
+      window: 60                  
+
+# global output settings -------------------------------------------
+stack_axis: channel
