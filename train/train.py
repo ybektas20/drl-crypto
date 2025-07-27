@@ -101,7 +101,7 @@ def single_run(cfg: DictConfig, grid_params: Dict[str, Any]) -> Dict[str, Any]:
         if cfg.train.log_every and ((step + 1) % cfg.train.log_every == 0 or step == 0):
             logger.info(
                 f"params={grid_params}  step={step}  r={r:+.4f}  logP={logP:+.2f}  sharpe={sharpe(np.asarray(rewards), ann):+.2f}"
-                f"weights={agent.w_prev.cpu().numpy() if agent.w_prev is not None else None}"
+                f"\nweights={agent.w_prev.cpu().numpy() if agent.w_prev is not None else None}"
                 )
 
     train_sharpe = sharpe(np.asarray(rewards), ann)

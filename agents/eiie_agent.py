@@ -54,7 +54,6 @@ class EIIEAgent:
         self.beta  = beta
         self.grad_clip = grad_clip
         self.lam_t = lambda_turnover
-        print(f"[dbg] EIIEAgent commission={self.c:.4f}  λ_turnover={self.lam_t:.4e}")
         # optimiser -----------------------------------------------------
         self.opt = Adam(self.net.parameters(), lr=lr)
 
