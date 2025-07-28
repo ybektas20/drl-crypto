@@ -15,7 +15,7 @@ features:
   
   return:                         
     input_col: price_last
-    windows: [1]
+    windows: [1, 5]
     transform: log
     dtype: float32
     norm:
@@ -24,7 +24,7 @@ features:
   
   volume:                         
     input_cols: [buy_qty, sell_qty]
-    windows: [1]
+    windows: [1, 5]
     transform: log 
     dtype: float32
     norm:
@@ -34,7 +34,7 @@ features:
   ofi:                            
     buy_col: buy_qty
     sell_col: sell_qty
-    windows: [1]
+    windows: [1, 5]
     dtype: float32
     norm:
       type: zscore

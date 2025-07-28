@@ -34,11 +34,11 @@ eval:
   annualization: null
 
 grid:                 
-  #window: [6, 36, 72]  
-  #lr: [ 1.0e-4, 5.0e-5, 1.0e-5]
-  #beta: [5.0e-2, 5.0e-3] 
-  #batch_size: [64, 128, 256, 512]
-  window : [50]
-  lr: [5.0e-4]
-  beta: [0.1]
-  batch_size: [50]
+  window: [6, 36, 72]  
+  lr: [ 1.0e-4, 5.0e-5, 1.0e-5]
+  beta: [5.0e-2, 5.0e-3] 
+  batch_size: [64, 128, 256, 512]
+  #window : [50]
+  #lr: [5.0e-4]
+  #beta: [0.01]
+  #batch_size: [50]
