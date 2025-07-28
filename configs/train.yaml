@@ -17,12 +17,12 @@ model:
   long_short: True   # true => L1 projection+cash, false => softmax+cash
 
 agent:
-  commission: 0.0
+  commission: 0.0002
   lr: 1.0e-5          # can be overridden by grid.lr
   batch_size: 32
   beta: 0.2
   grad_clip: 5.0
-  lambda_turnover: 1.0e-3  # regularisation for turnover 
+  lambda_turnover: 0.01 # regularisation for turnover
 
 train:
   log_every: 1000      # print every N steps
@@ -34,11 +34,11 @@ eval:
   annualization: null
 
 grid:                 
-  window: [6, 18, 36, 48, 72]  
-  lr: [1.0e-3, 5.0e-4, 1.0e-4,5.0e-5, 1.0e-5]
-  beta: [1.0e-1, 1.0e-2, 5.0e-3] 
-  batch_size: [64, 128, 256, 512, 1024]
-  #window : [50]
-  #lr: [5.0e-4]
-  #beta: [0.01]
-  #batch_size: [500]
+  #window: [6, 36, 72]  
+  #lr: [ 1.0e-4, 5.0e-5, 1.0e-5]
+  #beta: [5.0e-2, 5.0e-3] 
+  #batch_size: [64, 128, 256, 512]
+  window : [50]
+  lr: [5.0e-4]
+  beta: [0.1]
+  batch_size: [50]

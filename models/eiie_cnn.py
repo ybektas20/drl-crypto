@@ -45,7 +45,6 @@ class EIIE_CNN(nn.Module):
         return torch.cat([w_assets, w_cash], 1)
 
 
-
     def _softmax_cash(self, scores: torch.Tensor) -> torch.Tensor:
         logits = torch.cat([scores, self.cash_bias.expand(scores.size(0), 1)], 1)
         return F.softmax(logits, dim=1)     # (B, m + 1)

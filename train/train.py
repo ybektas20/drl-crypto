@@ -165,7 +165,7 @@ def main(cfg: DictConfig) -> None:
             try:
                 res = fut.result()
                 results.append(res)
-                logger.info(f"[{i}/{len(trials)}]  train_Sharpe={res['train_sharpe']:+.3f}  val_Sharpe={res['val_sharpe']:+.3f}  eq={res['val_eq']:.6f}  params={params}")
+                logger.info(f"[{i}/{len(trials)}]  train_Sharpe={res['train_sharpe']:+.3f}  val_Sharpe={res['val_sharpe']:+.3f} train_eq={res['train_eq']:.6f}  val_eq={res['val_eq']:.6f}  params={params}")
             except Exception as e:
                 logger.error(f"[{i}/{len(trials)}]  FAILED  params={params}  error: {e}")
 

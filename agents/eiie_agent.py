@@ -71,18 +71,26 @@ class EIIEAgent:
         # pending state waiting for yₜ₊₁ -------------------------------
         self._pending: Tuple[Tensor, Tensor] | None = None   # (Xₜ , wₜ)
 
+        ##dbg
+        self.update_count = 0
+
     # ------------------------------------------------------------------ #
     # helpers
     # ------------------------------------------------------------------ #
-    def _commission_factor(self,
-                           w_new: Tensor,
-                           w_old: Tensor) -> Tensor:
+    def _commission_factor(self, w_new: Tensor,
+                        w_prev: Tensor,              # w_{t-1}
+                        y: Tensor) -> Tensor:        # y_t (m,)
         """
-        Single‑period wealth retention factor μ given two allocations.
+        μ_t = 1 - c * || w'_{t} - w_{t} ||_1   (round‑trip commission)
+        w'_{t} = (y_t ⊙ w_{t-1}) / (y_t·w_{t-1})
         """
-        turnover = (w_new[..., :-1] - w_old[..., :-1]).abs().sum(dim=-1, keepdim=True)
-        mu = torch.clamp(1.0 - self.c * turnover, min=1e-6)   # already round‑trip
-        return mu                                             # shape (·, 1)
+        # append cash =1 so we can reuse code        
+        w_prime = (w_prev * y) / (w_prev * y).sum()       # drifted weights
+
+        turnover = (w_new[..., :-1] - w_prime[..., :-1]).abs().sum(dim=-1, keepdim=True)
+        mu = torch.clamp(1.0 - self.c * turnover, min=1e-6)
+        return mu
+                                  
 
     @torch.no_grad()
     def act(self, X: Tensor) -> Tensor:
@@ -119,7 +127,7 @@ class EIIEAgent:
         if self._pending is not None:
             X_prev_cpu, w_prev_detached = self._pending             # w_{t‑1}
             y_full = torch.cat([y, torch.ones(1, device=self.device)])  # cash=1
-            mu_prev  = self._commission_factor(w_t, w_prev_detached)
+            mu_prev  = self._commission_factor(w_t, w_prev_detached, y_full)
             dot_prev = (w_prev_detached * y_full).sum()
             reward_prev = torch.log(torch.clamp(mu_prev * dot_prev, 1e-8))
             # store transition in replay buffer
@@ -163,15 +171,31 @@ class EIIEAgent:
         # forward pass -------------------------------------------------
         wb = self.net(Xb, wpb)                              # (B, m+1)
 
-        yb_full = torch.cat([yb, torch.ones_like(yb[:, :1])], dim=1)
-        dot     = (wb * yb_full).sum(dim=1, keepdim=True)   # (B,1)
+        # --- already in your code ---
+        yb_full = torch.cat([yb, torch.ones_like(yb[:, :1])], dim=1)  # (B, m+1)
 
-        turnover = (wb[..., :-1] - wpb[..., :-1]).abs().sum(dim=1, keepdim=True)
-        mu       = torch.clamp(1.0 - self.c * turnover, min=1e-6)
+                # drift the *previous* allocation for fee calculation only
+        w_prime = (wpb * yb_full) / (wpb * yb_full).sum(dim=1, keepdim=True)
 
-        base_loss = -torch.log(mu * dot).mean()                  # maximise log‑return
+        # ------- gradient flows through wb -------
+        dot = (wb * yb_full).sum(dim=1, keepdim=True)          #  ← NO .detach()
+
+
+        w_prime = (wpb * yb_full) / (wpb * yb_full).sum(dim=1, keepdim=True)
+
+        turnover = (wb[..., :-1] - w_prime[..., :-1]).abs().sum(dim=1, keepdim=True)
+        mu       = torch.clamp(1.0 - self.c * turnover, 1e-6)   # 0.5 = per‑side
+
+        base_loss = -torch.log(mu * dot).mean()
         l2_turn   = self.lam_t * (turnover ** 2).mean()
-        loss = base_loss + l2_turn
+        loss      = base_loss + l2_turn
+
+        if self.update_count % self.batch == 0:
+            print(f"turn {turnover.mean():.3f}  mu {mu.mean():.6f} "
+                  f"dot {dot.mean():.4f}  loss {loss.item():+.4f}")
+        self.update_count += 1
+
+
         # backward + optimiser step -------------------------
         self.opt.zero_grad(set_to_none=True)
         loss.backward()
